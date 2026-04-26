@@ -12,7 +12,7 @@ export default function AdminDashboard() {
               <div className="h-8 w-8 bg-sky-500 rounded-lg flex items-center justify-center shadow-lg shadow-sky-500/20">
                 <span className="text-white font-bold text-xl">O</span>
               </div>
-              <span className="text-xl font-bold tracking-tight">Ourus.<span className="text-sky-500 font-black">io</span> Admin</span>
+              <span className="text-xl font-bold tracking-tight">Ourus.<span className="text-sky-500 font-black">app</span> Admin</span>
             </div>
             
             <div className="flex items-center space-x-4">

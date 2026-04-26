@@ -111,13 +111,13 @@ export async function inviteEmployee(formData: FormData) {
     })
 
     const mailOptions = {
-      from: `"Ourus.io HR" <${process.env.GMAIL_USER}>`,
+      from: `"Ourus.app HR" <${process.env.GMAIL_USER}>`,
       to: email,
-      subject: `Welcome to Ourus.io - Set up your account`,
+      subject: `Welcome to Ourus.app - Set up your account`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
           <h2 style="color: #0284c7;">Welcome to the team, ${firstName}!</h2>
-          <p>You have been added to the <strong>Ourus.io</strong> payroll system. Your Employee ID is <strong>${employeeId}</strong>.</p>
+          <p>You have been added to the <strong>Ourus.app</strong> payroll system. Your Employee ID is <strong>${employeeId}</strong>.</p>
           <p>To access your dashboard and manage your payroll, please click the button below to set up your password:</p>
           <div style="margin: 32px 0;">
             <a href="${inviteLink}" style="background-color: #0284c7; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Set Up Your Password</a>
