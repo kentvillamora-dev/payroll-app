@@ -66,7 +66,7 @@ export async function inviteEmployee(formData: FormData) {
     type: 'invite',
     email: email,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/confirm`,
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/reset-password`,
     }
   })
 
@@ -136,5 +136,23 @@ export async function inviteEmployee(formData: FormData) {
   }
 
   revalidatePath('/admin')
+  return { success: true }
+}
+
+// 4. Auth: Update Password (for new employees)
+export async function updatePassword(formData: FormData) {
+  const supabase = await createClient()
+  const password = formData.get('password') as string
+
+  const { error } = await supabase.auth.updateUser({
+    password: password
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  // After setting the password, send them to the home page or a dashboard
+  // For now, we'll send them to a simple "Success" or back home to log in
   return { success: true }
 }
