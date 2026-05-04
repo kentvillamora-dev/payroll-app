@@ -2,8 +2,13 @@
 
 import { useState } from 'react';
 import { inviteEmployee } from '@/app/actions';
+interface AddEmployeeFormProps {
+  isPlatformAdmin: boolean;
+  companies: { id: string, name: string }[];
+  roles: { id: string, name: string, code: string }[];
+}
 
-export default function AddEmployeeForm() {
+export default function AddEmployeeForm({ isPlatformAdmin, companies, roles }: AddEmployeeFormProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -37,7 +42,38 @@ export default function AddEmployeeForm() {
 
       <form id="add-employee-form" action={handleSubmit} className="space-y-6">
         
-        {/* Row 1: Employee ID & Email */}
+        {/* Row 0: Company & Role Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {isPlatformAdmin && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">Target Company</label>
+              <select 
+                name="company_id"
+                required
+                className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all outline-none"
+              >
+                <option value="">Select a company...</option>
+                {companies.map(company => (
+                  <option key={company.id} value={company.id}>{company.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">Assigned Role</label>
+            <select 
+              name="role_id"
+              required
+              className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all outline-none"
+            >
+              <option value="">Select a role...</option>
+              {roles.map(role => (
+                <option key={role.id} value={role.id}>{role.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">Employee ID</label>

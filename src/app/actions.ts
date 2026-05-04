@@ -35,36 +35,75 @@ export async function signOut() {
 // 3. Admin: Invite Employee (Manual Email via Gmail)
 export async function inviteEmployee(formData: FormData) {
   const adminClient = await createAdminClient()
+  const supabase = await createClient()
 
-  // Extract Form Data
-  const email = formData.get('email') as string
+  // 1. Identify the Inviter (The spreadsheet "User" running the action)
+  const { data: { user: inviter } } = await supabase.auth.getUser()
+  if (!inviter) return { error: 'Not authenticated' }
+
+  // 2. Check Roles: Is this a Platform Admin?
+  const { data: platformAdmin } = await adminClient
+    .from('platform_admins')
+    .select('id')
+    .eq('id', inviter.id)
+    .single()
+
+  // 3. Extract Form Data
+  const email = formData.get('email') as string // Personal email for notification
   const employeeId = formData.get('employee_id') as string
   const firstName = formData.get('first_name') as string
   const middleName = formData.get('middle_name') as string || null
   const lastName = formData.get('last_name') as string
   const suffix = formData.get('suffix') as string || null
-
-  // 1. Validation: Exactly 6 digits
-  if (!/^\d{6}$/.test(employeeId)) {
-    return { error: 'Employee ID must be exactly 6 digits (numbers only).' }
+  const roleId = formData.get('role_id') as string
+  
+  // Decide which company this user belongs to
+  // If Platform Admin, use the form's selection. If Company Admin, use their own company.
+  let targetCompanyId = formData.get('company_id') as string
+  if (!platformAdmin) {
+    const { data: userData } = await adminClient
+      .from('users')
+      .select('company_id')
+      .eq('id', inviter.id)
+      .single()
+    
+    if (!userData) return { error: 'Inviter has no company assigned' }
+    targetCompanyId = userData.company_id
   }
 
-  // 2. Check for Duplicate Employee ID BEFORE creating auth user
-  const { data: existingEmp } = await adminClient
-    .from('employees')
-    .select('employee_id')
+  // 4. Fetch the Company Domain for Work Email generation
+  const { data: company } = await adminClient
+    .from('companies')
+    .select('email_domain')
+    .eq('id', targetCompanyId)
+    .single()
+  
+  if (!company) return { error: 'Company not found' }
+
+  // 5. AUTO-GENERATE WORK EMAIL (Rule: initial + initial + id @ domain)
+  const workEmail = `${firstName[0]}${lastName[0]}${employeeId}@${company.email_domain}`.toLowerCase()
+
+  // 6. Validation: Exactly 6 digits
+  if (!/^\d{6}$/.test(employeeId)) {
+    return { error: 'Employee ID must be exactly 6 digits.' }
+  }
+
+  // 7. Check for Duplicate Work Email or ID
+  const { data: existingUser } = await adminClient
+    .from('users')
+    .select('id')
+    .eq('company_id', targetCompanyId)
     .eq('employee_id', employeeId)
     .single()
 
-  if (existingEmp) {
-    return { error: `Employee ID ${employeeId} is already assigned to another staff member.` }
+  if (existingUser) {
+    return { error: `Employee ID ${employeeId} already exists in this company.` }
   }
 
-  // 3. Generate Secure Invite Link from Supabase
-  // Note: We use 'invite' type. This link will let the user set their password.
+  // 8. Provision Auth for the WORK EMAIL (This will be their username)
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.generateLink({
     type: 'invite',
-    email: email,
+    email: workEmail,
     options: {
       redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/reset-password`,
     }
@@ -72,32 +111,48 @@ export async function inviteEmployee(formData: FormData) {
 
   if (inviteError) {
     console.error('Supabase Invite Error:', inviteError.message)
-    return { error: `Failed to generate invite link: ${inviteError.message}` }
+    return { error: `Auth provision failed: ${inviteError.message}` }
   }
 
   const { user } = inviteData
   const inviteLink = inviteData.properties.action_link
 
-  // 2. Create the record in our custom 'employees' table
+  // 9. Create the profile record
   const { error: dbError } = await adminClient
-    .from('employees')
+    .from('users')
     .insert({
       id: user.id,
+      company_id: targetCompanyId,
       employee_id: employeeId,
       first_name: firstName,
       middle_name: middleName,
       last_name: lastName,
       suffix: suffix,
-      personal_email: email,
-      role: 'employee',
-      status: 'active'
+      email: workEmail, // The Login Identity
+      work_email: workEmail,
+      is_active: true,
+      created_by: inviter.id,
+      modified_by: inviter.id
     })
 
   if (dbError) {
-    // If DB fails, we should technically delete the auth user to keep it clean, 
-    // but for now we'll just report the error.
     console.error('Database Error:', dbError.message)
-    return { error: `User created but profile failed: ${dbError.message}` }
+    return { error: `Profile creation failed: ${dbError.message}` }
+  }
+
+  // 10. Assign the Selected Role (The 'Role Assignment' bridge)
+  const { error: roleError } = await adminClient
+    .from('user_roles')
+    .insert({
+      user_id: user.id,
+      role_id: roleId,
+      created_by: inviter.id,
+      modified_by: inviter.id
+    })
+
+  if (roleError) {
+    console.error('Role Assignment Error:', roleError.message)
+    // We don't stop here, but we should log it.
   }
 
   // 3. Send the Email via Gmail (Manual Option B)

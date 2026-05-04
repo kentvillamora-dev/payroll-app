@@ -1,7 +1,60 @@
 import { signOut } from '@/app/actions';
 import AddEmployeeForm from '@/components/AddEmployeeForm';
+import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 
-export default function AdminDashboard() {
+export default async function AdminDashboard() {
+  const supabase = await createClient();
+  const adminClient = await createAdminClient();
+  
+  // 1. Get the current user
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // 2. Check if Platform Admin
+  const { data: platformAdmin } = await adminClient
+    .from('platform_admins')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  // 3. Fetch Companies (only needed for Platform Admins)
+  let companies: any[] = [];
+  let roles: any[] = [];
+
+  if (platformAdmin) {
+    const { data } = await adminClient
+      .from('companies')
+      .select('id, name')
+      .eq('is_active', true);
+    companies = data || [];
+    
+    // For Platform Admin, we'll fetch roles for the first company as a default 
+    // or let the form handle dynamic fetching later. For now, fetch Demo Company roles.
+    const { data: roleData } = await adminClient
+      .from('roles')
+      .select('id, name, code')
+      .eq('company_id', '00000000-0000-0000-0000-000000000000')
+      .eq('is_active', true);
+    roles = roleData || [];
+  } else {
+    // If Company Admin, get their specific company's roles
+    const { data: userData } = await adminClient
+      .from('users')
+      .select('company_id')
+      .eq('id', user.id)
+      .single();
+    
+    if (userData) {
+      const { data: roleData } = await adminClient
+        .from('roles')
+        .select('id, name, code')
+        .eq('company_id', userData.company_id)
+        .eq('is_active', true);
+      roles = roleData || [];
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-[family-name:var(--font-geist-sans)]">
       {/* Top Navigation */}
@@ -16,6 +69,9 @@ export default function AdminDashboard() {
             </div>
             
             <div className="flex items-center space-x-4">
+              <div className="text-sm px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
+                {platformAdmin ? 'Platform Admin' : 'Company Admin'}
+              </div>
               <form action={signOut}>
                 <button 
                   type="submit"
@@ -38,24 +94,13 @@ export default function AdminDashboard() {
           <p className="mt-2 text-slate-500 dark:text-slate-400">Manage your company's payroll and employee access from one place.</p>
         </div>
 
-        {/* Quick Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {[
-            { label: 'Total Employees', value: '0', icon: '👥' },
-            { label: 'Pending Approvals', value: '0', icon: '⏳' },
-            { label: 'Next Pay Run', value: 'TBD', icon: '📅' },
-          ].map((stat, i) => (
-            <div key={i} className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-              <div className="text-2xl mb-2">{stat.icon}</div>
-              <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{stat.label}</div>
-              <div className="text-2xl font-bold mt-1">{stat.value}</div>
-            </div>
-          ))}
-        </div>
-
         {/* Action Center: Hiring Form */}
         <div className="mb-12">
-          <AddEmployeeForm />
+          <AddEmployeeForm 
+            isPlatformAdmin={!!platformAdmin} 
+            companies={companies} 
+            roles={roles}
+          />
         </div>
       </main>
     </div>
