@@ -12,11 +12,15 @@ export default async function AdminDashboard() {
   if (!user) return null;
 
   // 2. Check if Platform Admin
-  const { data: platformAdmin } = await adminClient
+  const { data: platformAdmin, error: platformError } = await adminClient
     .from('platform_admins')
     .select('*')
     .eq('id', user.id)
     .single();
+
+  if (platformError) {
+    console.error('Platform Admin Check Error:', platformError);
+  }
 
   // 3. Fetch Companies (only needed for Platform Admins)
   let companies: any[] = [];
