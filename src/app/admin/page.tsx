@@ -1,4 +1,5 @@
 import { signOut } from '@/app/actions';
+import { redirect } from 'next/navigation';
 import AddEmployeeForm from '@/components/AddEmployeeForm';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
@@ -12,51 +13,52 @@ export default async function AdminDashboard() {
   if (!user) return null;
 
   // 2. Check if Platform Admin
-  const { data: platformAdmin, error: platformError } = await adminClient
+  const { data: platformAdmin } = await adminClient
     .from('platform_admins')
     .select('*')
     .eq('id', user.id)
     .single();
 
-  if (platformError) {
-    console.error('Platform Admin Check Error:', platformError);
+  // 3. Check if Company Admin
+  const { data: companyAdminRole } = await adminClient
+    .from('user_roles')
+    .select('roles(code), users(company_id)')
+    .eq('user_id', user.id)
+    .single();
+
+  const isCompanyAdmin = (companyAdminRole?.roles as any)?.code === 'ADMIN';
+  const targetCompanyId = (companyAdminRole?.users as any)?.company_id;
+
+  // ZERO TRUST LOCKDOWN: If neither, redirect out of admin zone
+  if (!platformAdmin && !isCompanyAdmin) {
+    return redirect('/');
   }
 
-  // 3. Fetch Companies (only needed for Platform Admins)
+  // 4. Fetch Companies/Roles based on identified role
   let companies: any[] = [];
   let roles: any[] = [];
 
   if (platformAdmin) {
-    const { data } = await adminClient
+    const { data: companyData } = await adminClient
       .from('companies')
       .select('id, name')
       .eq('is_active', true);
-    companies = data || [];
+    companies = companyData || [];
     
-    // For Platform Admin, we'll fetch roles for the first company as a default 
-    // or let the form handle dynamic fetching later. For now, fetch Demo Company roles.
+    // Default roles for Platform Admin (can be refined later)
     const { data: roleData } = await adminClient
       .from('roles')
       .select('id, name, code')
-      .eq('company_id', '00000000-0000-0000-0000-000000000000')
+      .eq('company_id', '00000000-0000-0000-0000-000000000000') // Demo Company
       .eq('is_active', true);
     roles = roleData || [];
-  } else {
-    // If Company Admin, get their specific company's roles
-    const { data: userData } = await adminClient
-      .from('users')
-      .select('company_id')
-      .eq('id', user.id)
-      .single();
-    
-    if (userData) {
-      const { data: roleData } = await adminClient
-        .from('roles')
-        .select('id, name, code')
-        .eq('company_id', userData.company_id)
-        .eq('is_active', true);
-      roles = roleData || [];
-    }
+  } else if (isCompanyAdmin && targetCompanyId) {
+    const { data: roleData } = await adminClient
+      .from('roles')
+      .select('id, name, code')
+      .eq('company_id', targetCompanyId)
+      .eq('is_active', true);
+    roles = roleData || [];
   }
 
   return (
@@ -74,7 +76,7 @@ export default async function AdminDashboard() {
             
             <div className="flex items-center space-x-4">
               <div className="text-sm px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
-                {platformAdmin ? 'Platform Admin' : 'Company Admin'}
+                {platformAdmin ? 'Platform Admin' : isCompanyAdmin ? 'Company Admin' : 'Employee'}
               </div>
               <form action={signOut}>
                 <button 

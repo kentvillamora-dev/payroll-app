@@ -19,7 +19,8 @@ export async function login(formData: FormData) {
   })
 
   if (error) {
-    return redirect('/?error=Authentication failed. Please check your details and try again.')
+    console.error('SUPABASE LOGIN ERROR:', error.message)
+    return redirect(`/?error=Authentication failed: ${error.message}`)
   }
 
   return redirect('/admin')
