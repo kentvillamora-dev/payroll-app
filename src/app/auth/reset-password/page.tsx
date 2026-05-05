@@ -1,15 +1,27 @@
 'use client'
 
-import { useState } from 'react';
-import { updatePassword } from '@/app/actions';
-import { redirect } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { updatePassword, signOut } from '@/app/actions';
+import { createClient } from '@/utils/supabase/client';
 
 export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    async function getSession() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUser(user.email ?? null);
+      }
+    }
+    getSession();
+  }, []);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
@@ -38,6 +50,19 @@ export default function ResetPasswordPage() {
             Set Your <span className="text-sky-500">Password</span>
           </h1>
           <p className="text-slate-500 dark:text-slate-400">Secure your Ourus.app account to continue.</p>
+          
+          {currentUser && (
+            <div className="mt-4 p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl inline-block border border-slate-200 dark:border-slate-700">
+              <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Account Identity</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-sky-400">{currentUser}</p>
+              <button 
+                onClick={() => signOut()}
+                className="mt-1 text-[10px] text-rose-500 hover:text-rose-600 underline font-bold uppercase tracking-tighter transition-all"
+              >
+                Not you? Click here to switch
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-2xl">

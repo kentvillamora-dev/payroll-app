@@ -12,6 +12,10 @@ export async function GET(request: NextRequest) {
   if (token_hash && type) {
     const supabase = await createClient()
 
+    // FORCE LOGOUT: Ensure no existing session interferes with the new invite
+    // scope: 'local' ensures we only sign out of the current browser
+    await supabase.auth.signOut({ scope: 'local' })
+
     const { error } = await supabase.auth.verifyOtp({
       type,
       token_hash,
