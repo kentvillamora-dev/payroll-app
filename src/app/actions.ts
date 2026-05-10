@@ -23,7 +23,31 @@ export async function login(formData: FormData) {
     return redirect(`/?error=Authentication failed: ${error.message}`)
   }
 
-  return redirect('/admin')
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const adminClient = await createAdminClient()
+    const { data: platformAdmin } = await adminClient
+      .from('platform_admins')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (platformAdmin) {
+      return redirect('/admin')
+    }
+
+    const { data: userRole } = await adminClient
+      .from('user_roles')
+      .select('roles(code)')
+      .eq('user_id', user.id)
+      .single()
+    
+    if ((userRole?.roles as any)?.code === 'ADMIN') {
+      return redirect('/manage')
+    }
+  }
+
+  return redirect('/dashboard')
 }
 
 // 2. Auth: Sign Out
@@ -102,11 +126,17 @@ export async function inviteEmployee(formData: FormData) {
   }
 
   // 8. Provision Auth for the WORK EMAIL (This will be their username)
+  // Dynamically detect the site URL for the redirect
+  const { headers } = await import('next/headers')
+  const host = (await headers()).get('host')
+  const protocol = host?.includes('localhost') ? 'http' : 'https'
+  const siteUrl = `${protocol}://${host}`
+
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.generateLink({
     type: 'invite',
     email: workEmail,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/reset-password`,
+      redirectTo: `${siteUrl}/auth/reset-password`,
     }
   })
 
@@ -211,4 +241,126 @@ export async function updatePassword(formData: FormData) {
   // After setting the password, send them to the home page or a dashboard
   // For now, we'll send them to a simple "Success" or back home to log in
   return { success: true }
+}
+
+// --- Timekeeping Actions ---
+
+function getActivePayPeriod() {
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+  const epochStart = new Date('2025-12-28T00:00:00Z');
+  const now = new Date();
+  
+  const diffTime = now.getTime() - epochStart.getTime();
+  const diffDays = Math.floor(diffTime / MS_PER_DAY);
+  
+  const currentPeriodIndex = Math.floor(diffDays / 14);
+  
+  const periodStart = new Date(epochStart.getTime() + (currentPeriodIndex * 14 * MS_PER_DAY));
+  const periodEnd = new Date(periodStart.getTime() + (13 * MS_PER_DAY));
+  
+  return {
+    period_start: periodStart.toISOString().split('T')[0],
+    period_end: periodEnd.toISOString().split('T')[0],
+  };
+}
+
+async function ensureActivePayPeriod(company_id: string, adminClient: any) {
+  const { period_start, period_end } = getActivePayPeriod();
+  
+  const { data: existingPeriod } = await adminClient
+    .from('pay_periods')
+    .select('id')
+    .eq('company_id', company_id)
+    .eq('period_start', period_start)
+    .single();
+    
+  if (existingPeriod) return existingPeriod.id;
+  
+  const { data: newPeriod, error } = await adminClient
+    .from('pay_periods')
+    .insert({
+      company_id,
+      period_type: 'FORTNIGHTLY',
+      period_start,
+      period_end,
+      cutoff_date: period_end,
+      status: 'OPEN'
+    })
+    .select('id')
+    .single();
+    
+  if (error) throw new Error(`Failed to create pay period: ${error.message}`);
+  return newPeriod.id;
+}
+
+export async function clockIn() {
+  const supabase = await createClient();
+  const adminClient = await createAdminClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: userData } = await adminClient
+    .from('users')
+    .select('company_id')
+    .eq('id', user.id)
+    .single();
+    
+  if (!userData?.company_id) return { error: 'User has no company assigned' };
+
+  try {
+    const payPeriodId = await ensureActivePayPeriod(userData.company_id, adminClient);
+
+    const { error } = await adminClient
+      .from('time_punches')
+      .insert({
+        user_id: user.id,
+        pay_period_id: payPeriodId,
+        punch_type: 'IN',
+        punched_at: new Date().toISOString(),
+        device_id: 'web-dashboard',
+        punch_method: 'MANUAL_LOGIN'
+      });
+
+    if (error) throw error;
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export async function clockOut() {
+  const supabase = await createClient();
+  const adminClient = await createAdminClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: userData } = await adminClient
+    .from('users')
+    .select('company_id')
+    .eq('id', user.id)
+    .single();
+    
+  if (!userData?.company_id) return { error: 'User has no company assigned' };
+
+  try {
+    const payPeriodId = await ensureActivePayPeriod(userData.company_id, adminClient);
+
+    const { error } = await adminClient
+      .from('time_punches')
+      .insert({
+        user_id: user.id,
+        pay_period_id: payPeriodId,
+        punch_type: 'OUT',
+        punched_at: new Date().toISOString(),
+        device_id: 'web-dashboard',
+        punch_method: 'MANUAL_LOGIN'
+      });
+
+    if (error) throw error;
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (err: any) {
+    return { error: err.message };
+  }
 }

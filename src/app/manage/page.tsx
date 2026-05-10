@@ -5,7 +5,7 @@ import AddEmployeeForm from '@/components/AddEmployeeForm';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
 
-export default async function AdminDashboard() {
+export default async function ManagerDashboard() {
   const supabase = await createClient();
   const adminClient = await createAdminClient();
   
@@ -13,37 +13,28 @@ export default async function AdminDashboard() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // 2. Check if Platform Admin
-  const { data: platformAdmin } = await adminClient
-    .from('platform_admins')
-    .select('*')
-    .eq('id', user.id)
+  // 2. Check if Company Admin
+  const { data: companyAdminRole } = await adminClient
+    .from('user_roles')
+    .select('roles(code), users(company_id)')
+    .eq('user_id', user.id)
     .single();
 
-  // ZERO TRUST LOCKDOWN: Platform Admins Only
-  if (!platformAdmin) {
+  const isCompanyAdmin = (companyAdminRole?.roles as any)?.code === 'ADMIN';
+  const targetCompanyId = (companyAdminRole?.users as any)?.company_id;
+
+  // ZERO TRUST LOCKDOWN: Company Admins Only
+  if (!isCompanyAdmin || !targetCompanyId) {
     return redirect('/');
   }
 
-  // 4. Fetch Companies/Roles based on identified role
-  let companies: any[] = [];
-  let roles: any[] = [];
-
-  if (platformAdmin) {
-    const { data: companyData } = await adminClient
-      .from('companies')
-      .select('id, name')
-      .eq('is_active', true);
-    companies = companyData || [];
-    
-    // Default roles for Platform Admin (can be refined later)
-    const { data: roleData } = await adminClient
-      .from('roles')
-      .select('id, name, code')
-      .eq('company_id', '00000000-0000-0000-0000-000000000000') // Demo Company
-      .eq('is_active', true);
-    roles = roleData || [];
-  }
+  // 3. Fetch Roles based on identified company
+  const { data: roleData } = await adminClient
+    .from('roles')
+    .select('id, name, code')
+    .eq('company_id', targetCompanyId)
+    .eq('is_active', true);
+  const roles = roleData || [];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-[family-name:var(--font-geist-sans)]">
@@ -55,7 +46,7 @@ export default async function AdminDashboard() {
               <div className="h-8 w-8 bg-sky-500 rounded-lg flex items-center justify-center shadow-lg shadow-sky-500/20">
                 <span className="text-white font-bold text-xl">O</span>
               </div>
-              <span className="text-xl font-bold tracking-tight">Ourus.<span className="text-sky-500 font-black">app</span> Admin</span>
+              <span className="text-xl font-bold tracking-tight">Ourus.<span className="text-sky-500 font-black">app</span> Manage</span>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -66,7 +57,7 @@ export default async function AdminDashboard() {
                 Switch to Employee View
               </Link>
               <div className="text-sm px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
-                Platform Admin
+                Manager
               </div>
               <form action={signOut}>
                 <button 
@@ -85,7 +76,7 @@ export default async function AdminDashboard() {
         {/* Header Section */}
         <div className="mb-10">
           <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-            Admin <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-600">Overview</span>
+            Manager <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-600">Overview</span>
           </h1>
           <p className="mt-2 text-slate-500 dark:text-slate-400">Manage your company's payroll and employee access from one place.</p>
         </div>
@@ -93,8 +84,8 @@ export default async function AdminDashboard() {
         {/* Action Center: Hiring Form */}
         <div className="mb-12">
           <AddEmployeeForm 
-            isPlatformAdmin={!!platformAdmin} 
-            companies={companies} 
+            isPlatformAdmin={false} 
+            companies={[]} 
             roles={roles}
           />
         </div>
